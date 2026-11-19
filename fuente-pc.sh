@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Prepara el paquete cifrado de una pasada del programa de PC y dice qué máquinas hacen falta. No escribe nada legible:
+# el código solo existe descifrado dentro de cada máquina, y lo que sale es la lista de máquinas y una huella.
+#  - Lanzada a mano (A): el paquete ya viene cifrado desde el PC.
+#  - Cada 10 minutos: si la carpeta pc/ de main cambió desde la última pasada, la prueba entera.
+#    Si no, prueba una rama de trabajo que aún no se haya probado, sin montar la ventana.
+#    La dirección del repositorio privado viene de un secreto, no de este archivo.
+set -u
+w=$RUNNER_TEMP/f; mkdir -p "$w"; cd "$w" || exit 1
+R=$GITHUB_REPOSITORY
+echo "m=[]" >> "$GITHUB_OUTPUT"
+
+if [ -n "${A:-}" ]; then
+  curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" "https://api.github.com/repos/$R/releases/assets/$A" -o p.enc || exit 1
+  node "$GITHUB_WORKSPACE/cifra.cjs" d p.enc p.tar && tar -xf p.tar ci/plan.txt || exit 1
+else
+  install -m 600 /dev/null llave && printf '%s\n' "$LLAVE" > llave
+  export GIT_SSH_COMMAND="ssh -i $w/llave -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+  U=$RUTA_PRIVADA
+  hechas=$(gh cache list -R "$R" -L 1000 --key pc- --json key -q '.[].key')
+  huella() { printf '%s%s' "$CLAVE" "$1" | sha256sum | cut -c1-20; }
+  git clone -q --depth 1 --filter=blob:none --no-checkout "$U" r || exit 1
+  # Huella de pc/app y pc/ci mezclada con la clave: dice si ya se probó sin decir qué hay dentro.
+  k=pc-$(huella "$(git -C r rev-parse HEAD:pc/app HEAD:pc/ci | tr -d '\n')")
+  rama=main; modo=completa
+  if grep -qx "$k" <<< "$hechas"; then
+    rm -rf r; k=""
+    for linea in $(git ls-remote "$U" 'refs/heads/fabrica/*' | awk '{print $1 "@" $2}'); do
+      kk=pc-$(huella "${linea%@*}")
+      grep -qx "$kk" <<< "$hechas" && continue
+      k=$kk; rama=${linea#*@refs/heads/}; modo=rama; break
+    done
+    [ -z "$k" ] && { rm -f llave; exit 0; }
+    git clone -q --depth 1 --filter=blob:none --no-checkout --branch "$rama" "$U" r || exit 1
+  fi
+  git -C r sparse-checkout set pc && git -C r checkout -q || exit 1
+  rm -f llave
+  (cd r && git ls-files -z pc | tar -czf "$w/src.tgz" --null -T -) || exit 1
+  mkdir -p ci && cp r/pc/ci/correr.sh ci/ && echo "$rama" > ci/rama.txt && python3 r/pc/ci/plan.py "$modo" > ci/plan.txt || exit 1
+  rm -rf r
+  tar -cf p.tar src.tgz ci && rm -f src.tgz && node "$GITHUB_WORKSPACE/cifra.cjs" c p.tar p.enc || exit 1
+  echo "k=$k" >> "$GITHUB_OUTPUT"
+fi
+rm -f p.tar
+# Una fila por máquina: su número y el sistema, Windows (w) o Linux (l).
+python3 -c '
+import json, sys
+filas = [{"i": i, "so": "windows-latest" if l.split()[3] == "w" else "ubuntu-24.04"} for i, l in enumerate(x for x in open(sys.argv[1]) if x.strip())]
+print("m=" + json.dumps(filas))' ci/plan.txt >> "$GITHUB_OUTPUT"

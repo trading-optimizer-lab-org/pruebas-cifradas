@@ -1,0 +1,217 @@
+name: p
+# Pruebas de la app de móvil. El código llega cifrado y solo se descifra dentro de cada máquina; los resultados salen cifrados.
+# t: la máquina 0 compila las APK una sola vez; las demás pasan pruebas que no las necesitan.
+# e1 y e2: emuladores, en dos grupos porque GitHub no deja más de 256 máquinas por grupo; y pruebas al azar; empiezan cuando acaba t y reciben las APK de la máquina 0, cifradas.
+
+on:
+  workflow_dispatch:
+    inputs:
+      a:
+        description: a
+        required: false
+        default: ''
+      m:
+        description: m
+        required: false
+        default: ''
+  schedule:
+    - cron: '*/10 * * * *'
+    - cron: '17 1 * * *'
+
+permissions:
+  contents: read
+
+run-name: ${{ inputs.a || 'p' }}
+
+concurrency:
+  group: ${{ github.event_name == 'schedule' && github.event.schedule || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  f:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    outputs:
+      t: ${{ steps.f.outputs.t }}
+      e1: ${{ steps.f.outputs.e1 }}
+      e2: ${{ steps.f.outputs.e2 }}
+      k: ${{ steps.f.outputs.k }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - id: f
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+          LLAVE: ${{ secrets.LLAVE }}
+          RUTA_PRIVADA: ${{ secrets.RUTA_PRIVADA }}
+          CARPETA: ${{ secrets.CARPETA }}
+          GH_TOKEN: ${{ github.token }}
+          A: ${{ inputs.a }}
+          M: ${{ inputs.m }}
+          EV: ${{ github.event_name }}
+          SCHED: ${{ github.event.schedule }}
+        run: bash fuente.sh > /dev/null 2>&1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: steps.f.outputs.t != '[]'
+        with:
+          name: f
+          path: ${{ runner.temp }}/f/p.enc
+          retention-days: 1
+
+  t:
+    needs: f
+    if: needs.f.outputs.t != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        i: ${{ fromJSON(needs.f.outputs.t) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: f
+          path: ${{ runner.temp }}/w
+      - id: t
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+          I: ${{ matrix.i }}
+        run: |
+          o="$RUNNER_TEMP/o"; w="$RUNNER_TEMP/w"; mkdir -p "$o"
+          {
+            node cifra.cjs d "$w/p.enc" "$w/p.tar" && tar -xf "$w/p.tar" -C "$w" && rm -f "$w/p.enc" "$w/p.tar" &&
+            bash "$w/ci/correr.sh" "$I" "$o"
+          } > "$o/salida.log" 2>&1 || echo fallo > "$o/error.txt"
+          { [ -e "$o/mal" ] || [ -e "$o/error.txt" ]; } && echo mal=1 >> "$GITHUB_OUTPUT"
+          tar -cf "$RUNNER_TEMP/r.tar" -C "$o" . > /dev/null 2>&1
+          node cifra.cjs c "$RUNNER_TEMP/r.tar" "$RUNNER_TEMP/r.enc" > /dev/null 2>&1
+          exit 0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: r${{ matrix.i }}
+          path: ${{ runner.temp }}/r.enc
+          if-no-files-found: ignore
+          retention-days: 3
+      - if: steps.t.outputs.mal == '1'
+        run: exit 1
+
+  e1:
+    needs: [f, t]
+    if: always() && needs.f.outputs.e1 != '[]' && needs.f.outputs.e1 != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        i: ${{ fromJSON(needs.f.outputs.e1) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: f
+          path: ${{ runner.temp }}/w
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          name: r0
+          path: ${{ runner.temp }}/a
+      - id: t
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+          I: ${{ matrix.i }}
+        run: |
+          o="$RUNNER_TEMP/o"; w="$RUNNER_TEMP/w"; mkdir -p "$o"
+          {
+            node cifra.cjs d "$w/p.enc" "$w/p.tar" && tar -xf "$w/p.tar" -C "$w" && rm -f "$w/p.enc" "$w/p.tar" &&
+            bash "$w/ci/correr.sh" "$I" "$o"
+          } > "$o/salida.log" 2>&1 || echo fallo > "$o/error.txt"
+          rm -rf "$RUNNER_TEMP/a"
+          { [ -e "$o/mal" ] || [ -e "$o/error.txt" ]; } && echo mal=1 >> "$GITHUB_OUTPUT"
+          tar -cf "$RUNNER_TEMP/r.tar" -C "$o" . > /dev/null 2>&1
+          node cifra.cjs c "$RUNNER_TEMP/r.tar" "$RUNNER_TEMP/r.enc" > /dev/null 2>&1
+          exit 0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: r${{ matrix.i }}
+          path: ${{ runner.temp }}/r.enc
+          if-no-files-found: ignore
+          retention-days: 3
+      - if: steps.t.outputs.mal == '1'
+        run: exit 1
+
+  e2:
+    needs: [f, t]
+    if: always() && needs.f.outputs.e2 != '[]' && needs.f.outputs.e2 != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        i: ${{ fromJSON(needs.f.outputs.e2) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: f
+          path: ${{ runner.temp }}/w
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          name: r0
+          path: ${{ runner.temp }}/a
+      - id: t
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+          I: ${{ matrix.i }}
+        run: |
+          o="$RUNNER_TEMP/o"; w="$RUNNER_TEMP/w"; mkdir -p "$o"
+          {
+            node cifra.cjs d "$w/p.enc" "$w/p.tar" && tar -xf "$w/p.tar" -C "$w" && rm -f "$w/p.enc" "$w/p.tar" &&
+            bash "$w/ci/correr.sh" "$I" "$o"
+          } > "$o/salida.log" 2>&1 || echo fallo > "$o/error.txt"
+          rm -rf "$RUNNER_TEMP/a"
+          { [ -e "$o/mal" ] || [ -e "$o/error.txt" ]; } && echo mal=1 >> "$GITHUB_OUTPUT"
+          tar -cf "$RUNNER_TEMP/r.tar" -C "$o" . > /dev/null 2>&1
+          node cifra.cjs c "$RUNNER_TEMP/r.tar" "$RUNNER_TEMP/r.enc" > /dev/null 2>&1
+          exit 0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: r${{ matrix.i }}
+          path: ${{ runner.temp }}/r.enc
+          if-no-files-found: ignore
+          retention-days: 3
+      - if: steps.t.outputs.mal == '1'
+        run: exit 1
+
+  z:
+    needs: [f, t, e1, e2]
+    if: always() && needs.f.outputs.k != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - run: touch "$RUNNER_TEMP/hecho"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}/hecho
+          key: hecho-${{ needs.f.outputs.k }}
