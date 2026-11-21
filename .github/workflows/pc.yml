@@ -108,7 +108,7 @@ jobs:
           key: ${{ steps.d.outputs.k }}
           restore-keys: npm-${{ runner.os }}-
       # Este paso ejecuta el código que se prueba y no recibe la clave en su entorno, pero el proceso de GitHub que la pasó a
-      # "abrir el paquete" sigue vivo. En Linux se quita sudo antes y se exige ptrace_scope >= 1, para que el código probado no
+      # "abrir el paquete" sigue vivo. En Linux se quitan sudo y docker antes y se exige ptrace_scope 2, para que el código probado no
       # pueda leer la memoria de ese proceso. En Windows la máquina es administradora: por eso las ramas de la fábrica solo van a Linux.
       # Los resultados se cifran con la llave pública resultados.pub y solo el PC puede abrirlos.
       - id: t
@@ -122,8 +122,9 @@ jobs:
           o="$T/o"; w="$T/w"; mkdir -p "$o"
           seguro=1
           if [ "$RUNNER_OS" = Linux ]; then
-            sudo -n sh -c 'echo 1 > /proc/sys/kernel/yama/ptrace_scope; rm -f /etc/sudoers.d/*' > /dev/null 2>&1
-            if sudo -n true > /dev/null 2>&1 || [ "$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo 0)" -lt 1 ]; then
+            # Docker también da root (el usuario runner está en su grupo): se para y se cierra su enchufe antes de quitar sudo.
+            sudo -n sh -c 'systemctl stop docker.socket docker containerd; rm -f /var/run/docker.sock; echo 2 > /proc/sys/kernel/yama/ptrace_scope; rm -f /etc/sudoers.d/*' > /dev/null 2>&1
+            if sudo -n true > /dev/null 2>&1 || docker info > /dev/null 2>&1 || [ "$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo 0)" -lt 2 ]; then
               seguro=0; echo "no se pudo quitar sudo" > "$o/error.txt"
             fi
           fi
