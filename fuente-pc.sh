@@ -24,7 +24,7 @@ else
   git -C r show HEAD:pc/ci/plan.py > "$w/plan.py" || exit 1
   # Huella de pc/app, pc/ci y el código de pc/fabrica, que prueba la tanda de tipos, mezclada con la clave: dice si ya se
   # probó sin decir qué hay dentro. Las notas de la fábrica cambian a cada rato y no cuentan.
-  k=pc-$(huella "$({ git -C r rev-parse HEAD:pc/app HEAD:pc/ci; git -C r ls-tree HEAD pc/fabrica/ | awk '$4 ~ /\.mjs$/ {print $3}'; } | tr -d '\n')")
+  k=pc-$(huella "$({ git -C r rev-parse HEAD:pc/app HEAD:pc/ci; git -C r ls-tree -r HEAD pc/fabrica/ | awk '$4 ~ /\.mjs$/ {print $3}'; } | tr -d '\n')")
   rama=main; modo=completa
   if grep -qx "$k" <<< "$hechas"; then
     rm -rf r; k=""
