@@ -20,6 +20,8 @@ else
   hechas=$(gh cache list -R "$R" -L 1000 --key pc- --json key -q '.[].key')
   huella() { printf '%s%s' "$CLAVE" "$1" | sha256sum | cut -c1-20; }
   git clone -q --depth 1 --filter=blob:none --no-checkout "$U" r || exit 1
+  # El reparto sale siempre del plan.py de main: el de una rama fabrica/* no se ejecuta aquí, donde están las claves.
+  git -C r show HEAD:pc/ci/plan.py > "$w/plan.py" || exit 1
   # Huella de pc/app y pc/ci mezclada con la clave: dice si ya se probó sin decir qué hay dentro.
   k=pc-$(huella "$(git -C r rev-parse HEAD:pc/app HEAD:pc/ci | tr -d '\n')")
   rama=main; modo=completa
@@ -36,7 +38,7 @@ else
   git -C r sparse-checkout set pc && git -C r checkout -q || exit 1
   rm -f llave
   (cd r && git ls-files -z pc | tar -czf "$w/src.tgz" --null -T -) || exit 1
-  mkdir -p ci && cp r/pc/ci/correr.sh ci/ && echo "$rama" > ci/rama.txt && python3 r/pc/ci/plan.py "$modo" > ci/plan.txt || exit 1
+  mkdir -p ci && cp r/pc/ci/correr.sh ci/ && echo "$rama" > ci/rama.txt && env -i PATH="$PATH" python3 "$w/plan.py" "$modo" > ci/plan.txt || exit 1
   rm -rf r
   tar -cf p.tar src.tgz ci && rm -f src.tgz && node "$GITHUB_WORKSPACE/cifra.cjs" c p.tar p.enc || exit 1
   echo "k=$k" >> "$GITHUB_OUTPUT"
