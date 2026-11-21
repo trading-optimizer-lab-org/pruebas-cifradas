@@ -31,8 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
-      actions: write
+      contents: read
+      actions: read
     outputs:
       m: ${{ steps.f.outputs.m }}
       k: ${{ steps.f.outputs.k }}
@@ -128,7 +128,7 @@ jobs:
         with:
           name: r${{ matrix.x.i }}
           path: ${{ runner.temp }}/r.enc
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 3
       - if: steps.d.outputs.g == '1' && steps.c.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -143,7 +143,9 @@ jobs:
   z:
     name: guardar
     needs: [f, t]
-    if: always() && needs.f.outputs.k != ''
+    # Solo cuenta como probado si las máquinas acabaron. Un fallo de las pruebas también cuenta, para no repetir cada 10 minutos
+    # una rama rota con 22 máquinas; una pasada cancelada o sin máquinas no cuenta.
+    if: always() && needs.f.outputs.k != '' && (needs.t.result == 'success' || needs.t.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
