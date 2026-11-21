@@ -78,19 +78,47 @@ jobs:
         with:
           name: pc-f
           path: ${{ runner.temp }}/w
-      - id: t
-        name: pasar la tanda
+      - id: d
+        name: abrir el paquete
         shell: bash
         env:
           CLAVE: ${{ secrets.CLAVE }}
           I: ${{ matrix.x.i }}
         run: |
           T=$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
+          w="$T/w"
+          { node cifra.cjs d "$w/p.enc" "$w/p.tar" && tar -xf "$w/p.tar" -C "$w" && rm -f "$w/p.enc" "$w/p.tar"; } > /dev/null 2>&1 || exit 0
+          # Caché de npm: solo paquetes públicos del registro. La clave es una huella del package-lock, que dice si cambió y no qué lleva.
+          h=$(tar -xzOf "$w/src.tgz" pc/app/package-lock.json 2>/dev/null | sha256sum | cut -c1-16)
+          echo "k=npm-$RUNNER_OS-$h" >> "$GITHUB_OUTPUT"
+          # La guarda solo la primera máquina de servidor (Windows) o de app (Linux), para no subirla una vez por máquina.
+          read -r tipo _ _ so < <(sed -n "$((I + 1))p" "$w/ci/plan.txt")
+          primera=$(awk -v t="$tipo" -v s="$so" '$1 == t && $4 == s {print NR - 1; exit}' "$w/ci/plan.txt")
+          case $tipo in server|app) [ "$primera" = "$I" ] && echo g=1 >> "$GITHUB_OUTPUT" ;; esac
+          exit 0
+      - id: c
+        if: steps.d.outputs.k != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ runner.temp }}/npmc
+            !${{ runner.temp }}/npmc/_logs
+          key: ${{ steps.d.outputs.k }}
+          restore-keys: npm-${{ runner.os }}-
+      - id: t
+        name: pasar la tanda
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+          I: ${{ matrix.x.i }}
+          npm_config_cache: ${{ runner.temp }}/npmc
+        run: |
+          T=$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
           o="$T/o"; w="$T/w"; mkdir -p "$o"
           {
-            node cifra.cjs d "$w/p.enc" "$w/p.tar" && tar -xf "$w/p.tar" -C "$w" && rm -f "$w/p.enc" "$w/p.tar" &&
-            env -u CLAVE bash "$w/ci/correr.sh" "$I" "$o"
+            [ -f "$w/ci/correr.sh" ] && env -u CLAVE bash "$w/ci/correr.sh" "$I" "$o"
           } > "$o/salida.log" 2>&1 || echo fallo > "$o/error.txt"
+          rm -rf "$T/npmc/_logs"
           { [ -e "$o/mal" ] || [ -e "$o/error.txt" ]; } && echo mal=1 >> "$GITHUB_OUTPUT"
           tar -cf "$T/r.tar" -C "$o" . > /dev/null 2>&1
           node cifra.cjs c "$T/r.tar" "$T/r.enc" > /dev/null 2>&1
@@ -102,6 +130,13 @@ jobs:
           path: ${{ runner.temp }}/r.enc
           if-no-files-found: ignore
           retention-days: 3
+      - if: steps.d.outputs.g == '1' && steps.c.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ runner.temp }}/npmc
+            !${{ runner.temp }}/npmc/_logs
+          key: ${{ steps.d.outputs.k }}
       - if: steps.t.outputs.mal == '1'
         run: exit 1
 
