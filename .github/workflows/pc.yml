@@ -30,8 +30,10 @@ jobs:
     name: preparar
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # contents: write solo para leer el paquete, que va en un borrador de publicación: GitHub no deja leerlo con read.
+    # Este trabajo no ejecuta código de la fábrica: el reparto sale del plan.py de main.
     permissions:
-      contents: read
+      contents: write
       actions: read
     outputs:
       m: ${{ steps.f.outputs.m }}
