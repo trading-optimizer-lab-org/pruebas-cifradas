@@ -91,8 +91,11 @@ jobs:
           w="$T/w"
           { node cifra.cjs d "$w/p.enc" "$w/p.tar" && tar -xf "$w/p.tar" -C "$w" && rm -f "$w/p.enc" "$w/p.tar"; } > /dev/null 2>&1 || exit 0
           # Caché de npm: solo paquetes públicos del registro. La clave es una huella del package-lock, que dice si cambió y no qué lleva.
+          # Una rama fabrica/* corre código sin revisar antes de guardarla: guarda la suya aparte y main nunca la abre.
+          case $(cat "$w/ci/rama.txt" 2>/dev/null) in fabrica/*) p=fab ;; *) p=main ;; esac
           h=$(tar -xzOf "$w/src.tgz" pc/app/package-lock.json 2>/dev/null | sha256sum | cut -c1-16)
-          echo "k=npm-$RUNNER_OS-$h" >> "$GITHUB_OUTPUT"
+          echo "k=npm-$p-$RUNNER_OS-$h" >> "$GITHUB_OUTPUT"
+          echo "p=$p" >> "$GITHUB_OUTPUT"
           # La guarda solo la primera máquina de servidor (Windows) o de app (Linux), para no subirla una vez por máquina.
           read -r tipo _ _ so < <(sed -n "$((I + 1))p" "$w/ci/plan.txt")
           primera=$(awk -v t="$tipo" -v s="$so" '$1 == t && $4 == s {print NR - 1; exit}' "$w/ci/plan.txt")
@@ -106,7 +109,10 @@ jobs:
             ${{ runner.temp }}/npmc
             !${{ runner.temp }}/npmc/_logs
           key: ${{ steps.d.outputs.k }}
-          restore-keys: npm-${{ runner.os }}-
+          # Una rama puede partir de la caché de main; main solo de la suya.
+          restore-keys: |
+            npm-${{ steps.d.outputs.p }}-${{ runner.os }}-
+            npm-main-${{ runner.os }}-
       # Este paso ejecuta el código que se prueba y no recibe la clave en su entorno, pero el proceso de GitHub que la pasó a
       # "abrir el paquete" sigue vivo. En Linux se quitan sudo y docker antes y se exige ptrace_scope 2, para que el código probado no
       # pueda leer la memoria de ese proceso. En Windows la máquina es administradora: por eso las ramas de la fábrica solo van a Linux.
