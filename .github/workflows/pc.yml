@@ -105,23 +105,24 @@ jobs:
             !${{ runner.temp }}/npmc/_logs
           key: ${{ steps.d.outputs.k }}
           restore-keys: npm-${{ runner.os }}-
+      # Este paso ejecuta el código que se prueba, así que no lleva ningún secreto: la clave solo estuvo en "abrir el paquete",
+      # que ya acabó. Los resultados se cifran con la llave pública resultados.pub y solo el PC puede abrirlos.
       - id: t
         name: pasar la tanda
         shell: bash
         env:
-          CLAVE: ${{ secrets.CLAVE }}
           I: ${{ matrix.x.i }}
           npm_config_cache: ${{ runner.temp }}/npmc
         run: |
           T=$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
           o="$T/o"; w="$T/w"; mkdir -p "$o"
           {
-            [ -f "$w/ci/correr.sh" ] && env -u CLAVE bash "$w/ci/correr.sh" "$I" "$o"
+            [ -f "$w/ci/correr.sh" ] && bash "$w/ci/correr.sh" "$I" "$o"
           } > "$o/salida.log" 2>&1 || echo fallo > "$o/error.txt"
           rm -rf "$T/npmc/_logs"
           { [ -e "$o/mal" ] || [ -e "$o/error.txt" ]; } && echo mal=1 >> "$GITHUB_OUTPUT"
           tar -cf "$T/r.tar" -C "$o" . > /dev/null 2>&1
-          node cifra.cjs c "$T/r.tar" "$T/r.enc" > /dev/null 2>&1
+          node cifra.cjs p "$T/r.tar" "$T/r.enc" > /dev/null 2>&1
           exit 0
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
