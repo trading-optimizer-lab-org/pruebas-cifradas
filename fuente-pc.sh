@@ -26,7 +26,13 @@ else
   # probó sin decir qué hay dentro. Las notas de la fábrica cambian a cada rato y no cuentan.
   k=pc-$(huella "$({ git -C r rev-parse HEAD:pc/app HEAD:pc/ci; git -C r ls-tree -r HEAD pc/fabrica/ | awk '$4 ~ /\.mjs$/ {print $3}'; } | tr -d '\n')")
   rama=main; modo=completa
-  if grep -qx "$k" <<< "$hechas"; then
+  if [ -n "${B:-}" ]; then
+    # Una rama pedida a mano (lanzar.cjs --rama): se baja de GitHub y el PC no empaqueta. El reparto sigue saliendo
+    # del plan.py de main. Solo nombres de rama normales y los modos que no necesitan nada del PC.
+    [[ "$B" =~ ^[A-Za-z0-9._/-]+$ && "$B" != -* && "${M:-completa}" =~ ^(completa|tipos|sencillo)$ ]] || exit 1
+    rm -rf r; k=""; rama=$B; modo=${M:-completa}
+    git clone -q --depth 1 --filter=blob:none --no-checkout --branch "$B" "$U" r || exit 1
+  elif grep -qx "$k" <<< "$hechas"; then
     rm -rf r; k=""
     for linea in $(git ls-remote "$U" 'refs/heads/fabrica/*' | awk '{print $1 "@" $2}'); do
       kk=pc-$(huella "${linea%@*}")
