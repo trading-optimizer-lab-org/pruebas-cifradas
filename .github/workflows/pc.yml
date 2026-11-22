@@ -13,6 +13,15 @@ on:
         description: n
         required: false
         default: ''
+      # b y m: una rama del repositorio privado y su modo. La nube la baja de GitHub y el PC no empaqueta nada.
+      b:
+        description: b
+        required: false
+        default: ''
+      m:
+        description: m
+        required: false
+        default: ''
   schedule:
     - cron: '5-59/10 * * * *'
 
@@ -51,6 +60,8 @@ jobs:
           RUTA_PRIVADA: ${{ secrets.RUTA_PRIVADA }}
           GH_TOKEN: ${{ github.token }}
           A: ${{ inputs.a }}
+          B: ${{ inputs.b }}
+          M: ${{ inputs.m }}
         run: bash fuente-pc.sh > /dev/null 2>&1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: steps.f.outputs.m != '[]'
