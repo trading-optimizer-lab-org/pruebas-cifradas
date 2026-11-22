@@ -64,7 +64,8 @@ jobs:
     needs: f
     if: needs.f.outputs.m != '[]' && needs.f.outputs.m != ''
     runs-on: ${{ matrix.x.so }}
-    timeout-minutes: 60
+    # La máquina virtual de Windows (tanda vm) instala Windows entero: fuente-pc.sh le da más tiempo, sin pasar del tope de 6 h.
+    timeout-minutes: ${{ matrix.x.min || 60 }}
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +99,7 @@ jobs:
           echo "p=$p" >> "$GITHUB_OUTPUT"
           # La guarda solo la primera máquina de servidor (Windows) o de app (Linux), para no subirla una vez por máquina.
           read -r tipo _ _ so < <(sed -n "$((I + 1))p" "$w/ci/plan.txt")
+          echo "tipo=$tipo" >> "$GITHUB_OUTPUT"
           primera=$(awk -v t="$tipo" -v s="$so" '$1 == t && $4 == s {print NR - 1; exit}' "$w/ci/plan.txt")
           case $tipo in server|app) [ "$primera" = "$I" ] && echo g=1 >> "$GITHUB_OUTPUT" ;; esac
           exit 0
@@ -122,11 +124,26 @@ jobs:
         shell: bash
         env:
           I: ${{ matrix.x.i }}
+          TIPO: ${{ steps.d.outputs.tipo }}
           npm_config_cache: ${{ runner.temp }}/npmc
         run: |
           T=$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
           o="$T/o"; w="$T/w"; mkdir -p "$o"
           seguro=1
+          if [ "$RUNNER_OS" = Linux ] && [ "$TIPO" = vm ]; then
+            # Windows en una máquina virtual (pc/ci/vm/vm.sh): QEMU, UEFI, TPM y herramientas de discos de Ubuntu, /dev/kvm abierto,
+            # sin el perfil de AppArmor de swtpm y una carpeta con sitio para los discos (en /mnt o, si no cabe, quitando
+            # herramientas que la tanda no usa). Se hace con sudo antes de quitarlo y no ejecuta nada del código probado.
+            sudo -n env U="$(id -un)" sh -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -q && apt-get install -y -q --no-install-recommends qemu-system-x86 qemu-utils ovmf swtpm genisoimage mtools dosfstools || exit 1
+              chmod 666 /dev/kvm || exit 1
+              [ -f /etc/apparmor.d/usr.bin.swtpm ] && apparmor_parser -R /etc/apparmor.d/usr.bin.swtpm
+              libre=$(df -BG --output=avail /mnt 2>/dev/null | tail -n 1 | tr -dc 0-9)
+              if [ "${libre:-0}" -ge 40 ]; then mkdir -p /mnt/vm && chown "$U" /mnt/vm
+              else rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL; mkdir -p /vm && chown "$U" /vm; fi
+            ' > /dev/null 2>&1 || echo "no se pudo preparar la máquina virtual" >> "$o/error.txt"
+          fi
           if [ "$RUNNER_OS" = Linux ]; then
             # Docker también da root (el usuario runner está en su grupo): se para y se cierra su enchufe antes de quitar sudo.
             sudo -n sh -c 'systemctl stop docker.socket docker containerd; rm -f /var/run/docker.sock; echo 2 > /proc/sys/kernel/yama/ptrace_scope; rm -f /etc/sudoers.d/*' > /dev/null 2>&1
