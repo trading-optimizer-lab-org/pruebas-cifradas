@@ -45,8 +45,9 @@ else
   echo "k=$k" >> "$GITHUB_OUTPUT"
 fi
 rm -f p.tar
-# Una fila por máquina: su número y el sistema, Windows (w) o Linux (l).
+# Una fila por máquina: su número, el sistema, Windows (w) o Linux (l), y sus minutos de tope. La máquina virtual de Windows
+# (tanda vm) instala Windows entero: 330 min, por debajo del tope de 6 h de GitHub.
 python3 -c '
 import json, sys
-filas = [{"i": i, "so": "windows-latest" if l.split()[3] == "w" else "ubuntu-24.04"} for i, l in enumerate(x for x in open(sys.argv[1]) if x.strip())]
+filas = [{"i": i, "so": "windows-latest" if l.split()[3] == "w" else "ubuntu-24.04", "min": 330 if l.split()[0] == "vm" else 60} for i, l in enumerate(x for x in open(sys.argv[1]) if x.strip())]
 print("m=" + json.dumps(filas))' ci/plan.txt >> "$GITHUB_OUTPUT"
