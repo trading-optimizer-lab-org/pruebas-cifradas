@@ -187,6 +187,24 @@ jobs:
       - if: steps.t.outputs.mal == '1'
         run: exit 1
 
+  # Junta los resultados cifrados de todas las máquinas en un solo artefacto, "todo", con una carpeta r<i> por máquina:
+  # así el PC los baja con 2 consultas a GitHub en vez de una por máquina. Los r<i> se quedan por si esto falla.
+  j:
+    name: juntar
+    needs: t
+    if: always() && (needs.t.result == 'success' || needs.t.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/upload-artifact/merge@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        continue-on-error: true
+        with:
+          name: todo
+          pattern: 'r*'
+          separate-directories: true
+          delete-merged: false
+          retention-days: 3
+
   z:
     name: guardar
     needs: [f, t]
