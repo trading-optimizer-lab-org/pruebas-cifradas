@@ -201,6 +201,32 @@ jobs:
       - if: steps.t.outputs.mal == '1'
         run: exit 1
 
+  # Junta los resultados cifrados de todas las máquinas en un solo artefacto, "todo", con una carpeta r<i> por máquina,
+  # y deja la marca h<pasada>: lanzar.cjs la vigila con git, que no gasta las 5.000 consultas por hora, y baja "todo" con 2.
+  # Los r<i> se quedan por si esto falla.
+  j:
+    needs: [f, t, e1, e2]
+    if: always() && needs.f.outputs.t != '[]' && needs.f.outputs.t != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/upload-artifact/merge@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        continue-on-error: true
+        with:
+          name: todo
+          pattern: 'r*'
+          separate-directories: true
+          delete-merged: false
+          compression-level: 0
+          retention-days: 3
+      - if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/h$GITHUB_RUN_ID" -f "sha=$GITHUB_SHA" > /dev/null
+
   z:
     needs: [f, t, e1, e2]
     if: always() && needs.f.outputs.k != ''
