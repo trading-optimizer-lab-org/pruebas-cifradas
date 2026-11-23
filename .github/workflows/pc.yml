@@ -63,6 +63,19 @@ jobs:
           B: ${{ inputs.b }}
           M: ${{ inputs.m }}
         run: bash fuente-pc.sh > /dev/null 2>&1
+      # Con lanzar.cjs --suelta el PC no espera y no borra el paquete: lo borra la pasada en cuanto lo ha leído.
+      # Usa el token de la pasada, que no gasta las 5.000 consultas por hora de la cuenta.
+      - name: borrar el paquete
+        if: inputs.a != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          A: ${{ inputs.a }}
+          R: ${{ github.repository }}
+        run: |
+          id=$(gh api "repos/$R/releases?per_page=100" --jq ".[] | select(any(.assets[]; .id == $A)) | .id" | head -1)
+          [ -n "$id" ] && gh api -X DELETE "repos/$R/releases/$id" > /dev/null
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: steps.f.outputs.m != '[]'
         with:
