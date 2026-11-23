@@ -56,6 +56,17 @@ jobs:
           EV: ${{ github.event_name }}
           SCHED: ${{ github.event.schedule }}
         run: bash fuente.sh > /dev/null 2>&1
+      # The package from the PC is deleted as soon as it has been read, so lanzar.cjs --suelta can leave right away.
+      # Uses the run's token, which does not spend the account's 5,000 calls per hour.
+      - if: inputs.a != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          A: ${{ inputs.a }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(any(.assets[]; .id == $A)) | .id" | head -1)
+          [ -n "$id" ] && gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" > /dev/null
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: steps.f.outputs.t != '[]'
         with:
