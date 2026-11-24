@@ -1,6 +1,7 @@
 name: pc
 # Pruebas del programa de PC en máquinas Windows y Linux. El código llega cifrado y solo se descifra dentro de cada máquina;
-# los resultados salen cifrados. f prepara el paquete; t pasa una tanda por máquina; z apunta la huella de lo ya probado.
+# los resultados salen cifrados. f prepara el paquete; t pasa una tanda por máquina; v calcula el veredicto; z apunta la huella
+# de lo ya probado.
 
 on:
   workflow_dispatch:
@@ -182,6 +183,8 @@ jobs:
           { [ -e "$o/mal" ] || [ -e "$o/error.txt" ]; } && echo mal=1 >> "$GITHUB_OUTPUT"
           tar -cf "$T/r.tar" -C "$o" . > /dev/null 2>&1
           node cifra.cjs p "$T/r.tar" "$T/r.enc" > /dev/null 2>&1
+          # Lo que necesita el veredicto (tanda, resumen y e2e.log), cifrado con veredicto.pub para el trabajo v.
+          node veredicto.cjs m "$o" "$T/s.enc" > /dev/null 2>&1
           exit 0
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
@@ -190,6 +193,13 @@ jobs:
           path: ${{ runner.temp }}/r.enc
           if-no-files-found: error
           retention-days: 3
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: s${{ matrix.x.i }}
+          path: ${{ runner.temp }}/s.enc
+          if-no-files-found: ignore
+          retention-days: 1
       - if: steps.d.outputs.g == '1' && steps.c.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -200,12 +210,51 @@ jobs:
       - if: steps.t.outputs.mal == '1'
         run: exit 1
 
+  # CI-V1: el veredicto de la pasada, con la misma puerta.py del PC, contra la base (base-pc.enc) y el sueltos.txt de la rama
+  # probada, que va dentro del paquete. Deja solo el artefacto "veredicto", de pocos KB y cifrado con resultados.pub: el PC lo
+  # lee con node lanzar.cjs --veredicto <pasada> sin bajar los resultados. Nada sale en claro en el registro.
+  v:
+    name: veredicto
+    needs: [f, t]
+    if: always() && needs.f.outputs.m != '[]' && needs.f.outputs.m != '' && (needs.t.result == 'success' || needs.t.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          name: pc-f
+          path: ${{ runner.temp }}/v/p
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          pattern: 's*'
+          path: ${{ runner.temp }}/v/s
+      - name: calcular el veredicto
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+        run: node veredicto.cjs j "$RUNNER_TEMP/v" > /dev/null 2>&1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: veredicto
+          path: ${{ runner.temp }}/v/veredicto.enc
+          if-no-files-found: error
+          retention-days: 3
+
   # Junta los resultados cifrados de todas las máquinas en un solo artefacto, "todo", con una carpeta r<i> por máquina:
   # así el PC los baja con 2 consultas a GitHub en vez de una por máquina. Los r<i> se quedan por si esto falla.
   j:
     name: juntar
     # Al acabar deja la marca refs/tags/h<pasada>: el PC la espera con git ls-remote, que no gasta consultas a GitHub.
-    needs: t
+    # Espera también al veredicto: con la marca puesta, lanzar.cjs --veredicto ya lo encuentra.
+    needs: [t, v]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
