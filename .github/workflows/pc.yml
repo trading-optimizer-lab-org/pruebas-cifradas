@@ -124,7 +124,8 @@ jobs:
           echo "k=npm-$p-$RUNNER_OS-$h" >> "$GITHUB_OUTPUT"
           echo "p=$p" >> "$GITHUB_OUTPUT"
           # La guarda solo la primera máquina de servidor (Windows) o de app (Linux), para no subirla una vez por máquina.
-          read -r tipo _ _ so < <(sed -n "$((I + 1))p" "$w/ci/plan.txt")
+          # La máquina de escritorio (CI-E1) no tiene línea en el plan: read sale con 1 y el paso no debe fallar por eso.
+          read -r tipo _ _ so < <(sed -n "$((I + 1))p" "$w/ci/plan.txt") || true
           echo "tipo=$tipo" >> "$GITHUB_OUTPUT"
           primera=$(awk -v t="$tipo" -v s="$so" '$1 == t && $4 == s {print NR - 1; exit}' "$w/ci/plan.txt")
           case $tipo in server|app) [ "$primera" = "$I" ] && echo g=1 >> "$GITHUB_OUTPUT" ;; esac
