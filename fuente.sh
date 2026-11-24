@@ -2,6 +2,7 @@
 # Prepara el paquete cifrado de una pasada y dice cuántas máquinas hacen falta. No escribe nada legible:
 # el código solo existe descifrado dentro de la máquina, y lo que sale es un número de máquinas y una huella.
 #  - Lanzada a mano (A): el paquete ya viene cifrado desde el PC.
+#  - Lanzada a mano con una rama (B): la trae del repositorio privado; el reparto, del plan.py de main.
 #  - Cada 10 minutos: trae la rama main del repositorio privado y pasa las pruebas si la carpeta de la app cambió desde la última pasada.
 #  - De noche: pasada completa más pruebas al azar, y limpieza de pasadas viejas.
 set -u
@@ -16,6 +17,11 @@ else
   modo=completa
   [ "${SCHED:-}" = "17 1 * * *" ] && modo=noche
   [ "${EV:-}" = workflow_dispatch ] && [ -n "${M:-}" ] && modo=$M
+  # Una rama pedida a mano (lanzar.cjs --rama): se baja del repositorio privado y el PC no empaqueta nada.
+  # Solo nombres de rama normales y los modos que no necesitan nada del PC.
+  if [ -n "${B:-}" ]; then
+    [[ "$B" =~ ^[A-Za-z0-9._/-]+$ && "$B" != -* && "$modo" =~ ^(completa|unidad|golden|recorrido|consumo|servidor)$ ]] || exit 1
+  fi
   if [ "$modo" = noche ]; then
     # Pasadas de más de 3 días, fuera. Y una señal de vida al mes, porque GitHub apaga lo programado en repositorios quietos 60 días.
     viejo=$(date -u -d '3 days ago' +%FT%TZ)
@@ -33,18 +39,23 @@ else
   # La dirección del repositorio privado y el nombre de la carpeta vienen de secretos, no de este archivo.
   C=$CARPETA
   git clone -q --depth 1 --filter=blob:none --no-checkout "$RUTA_PRIVADA" r || exit 1
+  # El reparto sale siempre del plan.py de main: el de una rama no se ejecuta aquí, donde están las claves.
+  git -C r show "HEAD:$C/tools/ci/plan.py" > "$w/plan.py" || exit 1
   # Huella de la carpeta de la app mezclada con la clave: dice si ya se probó sin decir qué hay dentro.
   k=$(printf '%s%s' "$CLAVE" "$(git -C r rev-parse "HEAD:$C")" | sha256sum | cut -c1-20)
-  if [ "$modo" = completa ] && gh cache list -R "$R" --key "hecho-$k" --json key -q '.[].key' | grep -q .; then rm -f llave; exit 0; fi
+  if [ -n "${B:-}" ]; then
+    rm -rf r; k=""
+    git clone -q --depth 1 --filter=blob:none --no-checkout --branch "$B" "$RUTA_PRIVADA" r || exit 1
+  elif [ "$modo" = completa ] && gh cache list -R "$R" --key "hecho-$k" --json key -q '.[].key' | grep -q .; then rm -f llave; exit 0; fi
   git -C r sparse-checkout set "$C" && git -C r checkout -q || exit 1
   rm -f llave
   (cd r && git ls-files -z "$C" | tar -cf "$w/src.tar" --null -T -) || exit 1
-  mkdir -p ci && cp "r/$C/tools/ci/correr.sh" ci/ && echo "$C" > ci/sub.txt && python3 "r/$C/tools/ci/plan.py" "$modo" > ci/plan.txt || exit 1
-  # Para el veredicto del trabajo j; mientras main no los tenga, j deja un veredicto NO que lo dice.
+  mkdir -p ci && cp "r/$C/tools/ci/correr.sh" ci/ && echo "$C" > ci/sub.txt && python3 "$w/plan.py" "$modo" > ci/plan.txt || exit 1
+  # Para el veredicto del trabajo j, de la misma rama que se prueba; si faltan, j deja un veredicto NO que lo dice.
   cp "r/$C/tools/ci/veredicto.cjs" "r/$C/tools/ci/fallos-conocidos.txt" ci/ 2>/dev/null || true
   rm -rf r
   tar -cf p.tar src.tar ci && rm -f src.tar && node "$GITHUB_WORKSPACE/cifra.cjs" c p.tar p.enc || exit 1
-  [ "$modo" = completa ] && echo "k=$k" >> "$GITHUB_OUTPUT"
+  [ "$modo" = completa ] && [ -n "$k" ] && echo "k=$k" >> "$GITHUB_OUTPUT"
 fi
 rm -f p.tar
 python3 "$GITHUB_WORKSPACE/reparto.py" ci/plan.txt >> "$GITHUB_OUTPUT"
