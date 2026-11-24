@@ -23,28 +23,32 @@ if paso instalar node scripts/npm-retry.mjs ci; then
   PASEO_DESKTOP_BROWSER_E2E_ARTIFACT_DIR="$O/pestanas" paso pestanas timeout 1200 npm run test:e2e:browser-tabs $d
   paso arranque timeout 600 npm run test:e2e:window-startup $d
   paso vida timeout 600 npm run test:e2e:lifecycle $d
-  paso navegador timeout 600 npx playwright install chromium
-  paso pantalla timeout 1200 npm run test:e2e:renderer $d
+  # test:e2e:renderer no va aquí: no abre la ventana sino Chromium, y Paseo solo la pasa en Linux. En Windows fallan
+  # nueve pruebas suyas (pasada 45373647851).
 fi
-# Resumen como el de correr.sh. Cada paso que falla deja un fallo con su última línea de error, para que el veredicto diga
-# qué pasó sin bajar los resultados; en sueltos.txt se apunta como "escritorio > <paso>".
+# Resumen como el de correr.sh. Cada paso que falla deja un fallo con su última línea de error, y otro por cada registro de
+# los procesos que arranca la prueba, para que el veredicto diga qué pasó sin bajar los resultados. En sueltos.txt se apunta
+# como "escritorio > <paso>".
 node - "$O" <<'JS'
 const fs = require('node:fs'), path = require('node:path');
 const o = process.argv[2];
 const pasos = fs.readFileSync(path.join(o, 'pasos.txt'), 'utf8').trim().split('\n').map(l => { const [n, code, s] = l.split(' '); return { n, code, s }; });
+const leer = (f) => { try { return fs.readFileSync(f, 'utf8').replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/).map(l => l.trim()).filter(Boolean); } catch { return []; } };
+// La última línea de error que no sea el aviso final de npm ni un aviso suelto.
+const ultimo = (lineas, solo) => {
+  const util = lineas.filter(l => !/^npm (error|ERR!)|WARN/i.test(l)).reverse();
+  return util.find(l => /^(\[\w+\] )?\w*Error\b[^:]*:|failed to start|exited with/.test(l)) || util.find(l => /error|failed|timed? ?out|assert/i.test(l)) || (solo ? null : util[0]);
+};
 const fallos = [];
 for (const p of pasos.filter(p => p.code !== '0')) {
-  let lineas = [];
-  try { lineas = fs.readFileSync(path.join(o, `${p.n}.log`), 'utf8').replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/).map(l => l.trim()).filter(Boolean); } catch {}
-  const m = lineas.slice(-40).join('\n').slice(0, 2000);
-  // Playwright: una por prueba de la lista "N failed", como las pantallas de la app en puerta.py.
-  const lista = lineas.findIndex(l => /^\d+ failed$/.test(l));
-  const pw = lista < 0 ? [] : lineas.slice(lista + 1).map(l => /^\[desktop\] › (\S+?:\d+):\d+ › /.exec(l)).filter(Boolean);
-  if (pw.length) { for (const x of pw) fallos.push({ t: `escritorio > ${p.n}: ${x[1]}`, m }); continue; }
-  // Si no, la última línea de error que no sea el aviso de npm ni el ruido del servidor de la app.
-  const util = lineas.filter(l => !/^npm (error|ERR!)|^\[metro\]|WARN/i.test(l)).reverse();
-  const error = util.find(l => /^\w*Error\b[^:]*:/.test(l)) || util.find(l => /error|failed|timed? ?out|assert/i.test(l)) || util[0] || `salió con ${p.code}`;
-  fallos.push({ t: `escritorio > ${p.n}: ${error.slice(0, 200)}`, m });
+  const lineas = leer(path.join(o, `${p.n}.log`));
+  fallos.push({ t: `escritorio > ${p.n}: ${(ultimo(lineas) || `salió con ${p.code}`).slice(0, 200)}`, m: lineas.slice(-40).join('\n').slice(0, 2000) });
+  // Los registros de la ventana y del servidor que arranca la prueba, en <carpeta del paso>/*.log.
+  const dir = path.join(o, p.n);
+  for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.log')) : []) {
+    const e = ultimo(leer(path.join(dir, f)).slice(-200), true);
+    if (e) fallos.push({ t: `escritorio > ${p.n}/${f}: ${e.slice(0, 200)}`, m: '' });
+  }
 }
 fs.writeFileSync(path.join(o, 'resumen.json'), JSON.stringify({ pasos, tests: 0, fallos }));
 if (fallos.length) fs.writeFileSync(path.join(o, 'mal'), '');
