@@ -90,6 +90,7 @@ jobs:
     if: needs.f.outputs.m != '[]' && needs.f.outputs.m != ''
     runs-on: ${{ matrix.x.so }}
     # La máquina virtual de Windows (tanda vm) instala Windows entero: fuente-pc.sh le da más tiempo, sin pasar del tope de 6 h.
+    # La de escritorio (CI-E1, escritorio.sh) va con e: 1 y 90 min.
     timeout-minutes: ${{ matrix.x.min || 60 }}
     strategy:
       fail-fast: false
@@ -149,6 +150,7 @@ jobs:
         shell: bash
         env:
           I: ${{ matrix.x.i }}
+          E: ${{ matrix.x.e || 0 }}
           TIPO: ${{ steps.d.outputs.tipo }}
           npm_config_cache: ${{ runner.temp }}/npmc
         run: |
@@ -176,8 +178,10 @@ jobs:
               seguro=0; echo "no se pudo quitar sudo" > "$o/error.txt"
             fi
           fi
+          # La máquina extra de escritorio (CI-E1) no está en el plan: sus pasos van en escritorio.sh, de este repositorio.
           {
-            [ "$seguro" = 1 ] && [ -f "$w/ci/correr.sh" ] && bash "$w/ci/correr.sh" "$I" "$o"
+            if [ "$E" = 1 ]; then [ "$seguro" = 1 ] && bash ./escritorio.sh "$w" "$o"
+            else [ "$seguro" = 1 ] && [ -f "$w/ci/correr.sh" ] && bash "$w/ci/correr.sh" "$I" "$o"; fi
           } > "$o/salida.log" 2>&1 || echo fallo >> "$o/error.txt"
           rm -rf "$T/npmc/_logs"
           { [ -e "$o/mal" ] || [ -e "$o/error.txt" ]; } && echo mal=1 >> "$GITHUB_OUTPUT"

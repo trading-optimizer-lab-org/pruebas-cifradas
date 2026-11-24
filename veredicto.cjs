@@ -64,7 +64,7 @@ function juntar(w) {
     if (clave.length !== 32 || !/^\d+$/.test(run || '')) throw Error('falta la clave o el número de pasada');
     const tar = (...a) => execFileSync('tar', a, { cwd: w, stdio: 'ignore' });
     fs.writeFileSync(path.join(w, 'p.tar'), abrir(clave, fs.readFileSync(path.join(w, 'p', 'p.enc'))));
-    tar('-xf', 'p.tar', 'src.tgz', 'ci/rama.txt');
+    tar('-xf', 'p.tar', 'src.tgz', 'ci/rama.txt', 'ci/plan.txt');
     fs.rmSync(path.join(w, 'p.tar'));
     let sueltos = path.join(w, 'pc', 'fabrica', 'sueltos.txt'), nota = '';
     try { tar('-xzf', 'src.tgz', 'pc/fabrica/sueltos.txt'); } catch {
@@ -85,6 +85,14 @@ function juntar(w) {
       for (const [k, f] of [['tanda', 'tanda.txt'], ['resumen', 'resumen.json'], ['e2e', 'e2e.log']]) if (typeof j[k] === 'string') fs.writeFileSync(path.join(t, f), j[k]);
       n++;
     }
+    // Una máquina que no dejó resumen (cancelada, sin tiempo o rota) cuenta como "sin resumen.json" en puerta.py. Las que
+    // espera son las del plan y, si el plan pasa el escritorio en Windows, la de escritorio.sh (CI-E1), que va la última.
+    const plan = fs.readFileSync(path.join(w, 'ci', 'plan.txt'), 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (plan.some(l => /^escr \S+ \S+ w$/.test(l))) plan.push('escv 0 1 w');
+    plan.forEach((l, i) => {
+      const t = path.join(dir, `t${i}`);
+      if (!fs.existsSync(t)) { fs.mkdirSync(t); fs.writeFileSync(path.join(t, 'tanda.txt'), l); }
+    });
     let salida;
     try {
       salida = execFileSync('python3', [path.join(__dirname, 'puerta.py'), run, path.join(w, 'base.json')], {
