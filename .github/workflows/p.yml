@@ -261,10 +261,10 @@ jobs:
               node cifra.cjs d "$d/r.enc" "$v/r.tar" && tar -xf "$v/r.tar" -C "$v/m/t$i" --exclude=./apk
               rm -rf "$v/r.tar" "$d"
             done
-            node "$v/ci/veredicto.cjs" "$v/m" "$v/ci/plan.txt" "$v/ci/fallos-conocidos.txt" > "$v/v.json"
+            node "$v/ci/veredicto.cjs" "$v/m" "$v/ci/plan.txt" "$v/ci/fallos-conocidos.txt" > "$v/v.txt"
           } > /dev/null 2>&1 || true
-          [ -s "$v/v.json" ] || printf '%s' '{"si":false,"texto":"NO: la nube no pudo juzgar esta pasada (falta el paquete, ci/veredicto.cjs o los resultados). Para mirarla: --ver-todo."}' > "$v/v.json"
-          node cifra.cjs c "$v/v.json" "$RUNNER_TEMP/veredicto.enc" > /dev/null 2>&1
+          [ -s "$v/v.txt" ] || printf 'Pasada %s.\nNO (la nube no pudo juzgar esta pasada: falta el paquete, ci/veredicto.cjs o los resultados. Para mirarla: --ver-todo)\n' "$GITHUB_RUN_ID" > "$v/v.txt"
+          node cifra.cjs c "$v/v.txt" "$RUNNER_TEMP/veredicto.enc" > /dev/null 2>&1
           rm -rf "$v"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
