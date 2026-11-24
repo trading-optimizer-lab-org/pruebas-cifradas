@@ -37,12 +37,19 @@ const leer = (f) => { try { return fs.readFileSync(f, 'utf8').replace(/\x1b\[[0-
 // La última línea de error que no sea el aviso final de npm ni un aviso suelto.
 const ultimo = (lineas, solo) => {
   const util = lineas.filter(l => !/^npm (error|ERR!)|WARN/i.test(l)).reverse();
-  return util.find(l => /^(\[\w+\] )?\w*Error\b[^:]*:|failed to start|exited with/.test(l)) || util.find(l => /error|failed|timed? ?out|assert/i.test(l)) || (solo ? null : util[0]);
+  const fuerte = util.find(l => /^(\[\w+\] )?\w*Error\b[^:]*:|failed to start|exited with/.test(l));
+  // En los registros secundarios solo cuenta un error claro: sus líneas INFO dicen "error" sin serlo.
+  return fuerte || (solo ? null : util.find(l => /error|failed|timed? ?out|assert/i.test(l)) || util[0]);
 };
 const fallos = [];
 for (const p of pasos.filter(p => p.code !== '0')) {
   const lineas = leer(path.join(o, `${p.n}.log`));
   fallos.push({ t: `escritorio > ${p.n}: ${(ultimo(lineas) || `salió con ${p.code}`).slice(0, 200)}`, m: lineas.slice(-40).join('\n').slice(0, 2000) });
+  // Qué buscaba la prueba y en qué línea, aparte: cada fallo se corta a 160 letras.
+  const donde = [...lineas].reverse();
+  for (const l of [donde.find(l => /^Locator:/.test(l)), donde.find(l => /^at .*\.(e2e|electron)\.mjs:\d+/.test(l))]) {
+    if (l) fallos.push({ t: `escritorio > ${p.n}: ${l.slice(0, 200)}`, m: '' });
+  }
   // Los registros de la ventana y del servidor que arranca la prueba, en <carpeta del paso>/*.log.
   const dir = path.join(o, p.n);
   for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.log')) : []) {
