@@ -213,6 +213,8 @@ jobs:
   # CI-V1: el veredicto de la pasada, con la misma puerta.py del PC, contra la base (base-pc.enc) y el sueltos.txt de la rama
   # probada, que va dentro del paquete. Deja solo el artefacto "veredicto", de pocos KB y cifrado con resultados.pub: el PC lo
   # lee con node lanzar.cjs --veredicto <pasada> sin bajar los resultados. Nada sale en claro en el registro.
+  # CI-D2: deja también "veredicto-claro", sin cifrar, para leerlo sin llaves (director en la nube): solo SÍ o NO en la última
+  # línea y, antes, los nombres de las pruebas con fallo nuevo. Sin mensajes, rutas ni código: este repositorio es público.
   v:
     name: veredicto
     needs: [f, t]
@@ -245,6 +247,12 @@ jobs:
         with:
           name: veredicto
           path: ${{ runner.temp }}/v/veredicto.enc
+          if-no-files-found: error
+          retention-days: 3
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: veredicto-claro
+          path: ${{ runner.temp }}/v/veredicto-claro.txt
           if-no-files-found: error
           retention-days: 3
 

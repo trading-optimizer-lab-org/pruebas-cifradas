@@ -5,6 +5,9 @@
 //  node veredicto.cjs j <carpeta>   en el último trabajo, con la clave CLAVE: abre el paquete (sueltos.txt de la rama probada),
 //      el resumen base (base-pc.enc) y lo de cada máquina (<carpeta>/s/s<i>/s.enc), pasa puerta.py, la misma del PC,
 //      y deja <carpeta>/veredicto.enc cifrado con resultados.pub: solo el PC puede leerlo (node lanzar.cjs --veredicto).
+//      Deja además <carpeta>/veredicto-claro.txt sin cifrar (CI-D2), para leerlo sin llaves desde la nube: solo los nombres
+//      de las pruebas con fallo nuevo, una por línea, y al final SÍ o NO. Sin mensajes de error, rutas ni código: el repositorio
+//      de las pasadas es público.
 // La llave privada de veredicto.pub no se guarda en ningún sitio: sale de la clave CLAVE, que ya es un secreto del repositorio.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -56,10 +59,23 @@ function maquina(o, salida) {
   fs.writeFileSync(salida, cifrarX(datos, crypto.createPublicKey(fs.readFileSync(path.join(__dirname, 'veredicto.pub'), 'utf8'))));
 }
 
+// De la salida de puerta.py solo pasan los nombres de las pruebas ("archivo > nombre" o "app/archivo:línea") y SÍ o NO.
+// Un nombre de prueba nunca lleva saltos de línea ni caracteres de control; se corta a 160 como hace puerta.py.
+function claro(salida) {
+  const lineas = String(salida || '').replace(/\r/g, '').trim().split('\n');
+  const si = lineas[lineas.length - 1] === 'SÍ';
+  const nombres = new Set();
+  for (const l of lineas) {
+    const m = /^[^:]*: fallo nuevo: (.+)$/.exec(l);
+    if (m) nombres.add(m[1].replace(/[\x00-\x1f\x7f]/g, '').slice(0, 160));
+  }
+  return [...(si ? [] : nombres), si ? 'SÍ' : 'NO'].join('\n') + '\n';
+}
+
 function juntar(w) {
   const run = process.env.GITHUB_RUN_ID;
   const clave = Buffer.from(String(process.env.CLAVE || '').trim(), 'hex');
-  let texto;
+  let texto, enClaro = 'NO\n';
   try {
     if (clave.length !== 32 || !/^\d+$/.test(run || '')) throw Error('falta la clave o el número de pasada');
     const tar = (...a) => execFileSync('tar', a, { cwd: w, stdio: 'ignore' });
@@ -92,10 +108,12 @@ function juntar(w) {
     } catch (e) { salida = e.stdout || ''; if (!/^(SÍ|NO)/m.test(salida)) throw Error(`puerta.py: ${String(e.stderr || e.message).slice(-300)}`); }
     const rama = fs.readFileSync(path.join(w, 'ci', 'rama.txt'), 'utf8').trim();
     texto = `Pasada ${run}. Rama probada: ${rama}. ${n} máquinas con resumen.\n${nota}${salida.trim()}\n`;
+    enClaro = claro(salida);
   } catch (e) {
     texto = `NO (no se pudo calcular el veredicto en la nube: ${e.message})\n`;
   }
   fs.writeFileSync(path.join(w, 'veredicto.enc'), cifrarPC(Buffer.from(texto)));
+  fs.writeFileSync(path.join(w, 'veredicto-claro.txt'), enClaro);
 }
 
 if (require.main === module) {
@@ -104,4 +122,4 @@ if (require.main === module) {
   else if (modo === 'j') juntar(a);
   else { console.error('uso: node veredicto.cjs m <carpeta> <salida> | j <carpeta>'); process.exitCode = 2; }
 }
-module.exports = { publica };
+module.exports = { publica, claro };
