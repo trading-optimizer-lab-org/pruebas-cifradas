@@ -32,12 +32,20 @@ node - "$O" <<'JS'
 const fs = require('node:fs'), path = require('node:path');
 const o = process.argv[2];
 const pasos = fs.readFileSync(path.join(o, 'pasos.txt'), 'utf8').trim().split('\n').map(l => { const [n, code, s] = l.split(' '); return { n, code, s }; });
-const fallos = pasos.filter(p => p.code !== '0').map(p => {
+const fallos = [];
+for (const p of pasos.filter(p => p.code !== '0')) {
   let lineas = [];
   try { lineas = fs.readFileSync(path.join(o, `${p.n}.log`), 'utf8').replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/).map(l => l.trim()).filter(Boolean); } catch {}
-  const error = [...lineas].reverse().find(l => /error|failed|timed? ?out|assert/i.test(l)) || lineas.at(-1) || `salió con ${p.code}`;
-  return { t: `escritorio > ${p.n}: ${error.slice(0, 200)}`, m: lineas.slice(-40).join('\n').slice(0, 2000) };
-});
+  const m = lineas.slice(-40).join('\n').slice(0, 2000);
+  // Playwright: una por prueba de la lista "N failed", como las pantallas de la app en puerta.py.
+  const lista = lineas.findIndex(l => /^\d+ failed$/.test(l));
+  const pw = lista < 0 ? [] : lineas.slice(lista + 1).map(l => /^\[desktop\] › (\S+?:\d+):\d+ › /.exec(l)).filter(Boolean);
+  if (pw.length) { for (const x of pw) fallos.push({ t: `escritorio > ${p.n}: ${x[1]}`, m }); continue; }
+  // Si no, la última línea de error que no sea el aviso de npm ni el ruido del servidor de la app.
+  const util = lineas.filter(l => !/^npm (error|ERR!)|^\[metro\]|WARN/i.test(l)).reverse();
+  const error = util.find(l => /^\w*Error\b[^:]*:/.test(l)) || util.find(l => /error|failed|timed? ?out|assert/i.test(l)) || util[0] || `salió con ${p.code}`;
+  fallos.push({ t: `escritorio > ${p.n}: ${error.slice(0, 200)}`, m });
+}
 fs.writeFileSync(path.join(o, 'resumen.json'), JSON.stringify({ pasos, tests: 0, fallos }));
 if (fallos.length) fs.writeFileSync(path.join(o, 'mal'), '');
 JS
