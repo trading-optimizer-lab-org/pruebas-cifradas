@@ -202,6 +202,16 @@ jobs:
           tar -cf "$RUNNER_TEMP/r.tar" -C "$o" . > /dev/null 2>&1
           node cifra.cjs c "$RUNNER_TEMP/r.tar" "$RUNNER_TEMP/r.enc" > /dev/null 2>&1
           exit 0
+      # Si GitHub corta el paso t, este cifra lo que quedó en "o" para que la subida tenga el registro. Nunca imprime ni sube nada sin cifrar.
+      - if: always()
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+        run: |
+          if [ ! -e "$RUNNER_TEMP/r.enc" ]; then
+            tar -cf "$RUNNER_TEMP/r.tar" -C "$RUNNER_TEMP/o" . > /dev/null 2>&1
+            node cifra.cjs c "$RUNNER_TEMP/r.tar" "$RUNNER_TEMP/r.enc" > /dev/null 2>&1
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
