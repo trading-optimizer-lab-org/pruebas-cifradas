@@ -40,6 +40,8 @@ else
   rm -f llave
   (cd r && git ls-files -z "$C" | tar -cf "$w/src.tar" --null -T -) || exit 1
   mkdir -p ci && cp "r/$C/tools/ci/correr.sh" ci/ && echo "$C" > ci/sub.txt && python3 "r/$C/tools/ci/plan.py" "$modo" > ci/plan.txt || exit 1
+  # Para el veredicto del trabajo j; mientras main no los tenga, j deja un veredicto NO que lo dice.
+  cp "r/$C/tools/ci/veredicto.cjs" "r/$C/tools/ci/fallos-conocidos.txt" ci/ 2>/dev/null || true
   rm -rf r
   tar -cf p.tar src.tar ci && rm -f src.tar && node "$GITHUB_WORKSPACE/cifra.cjs" c p.tar p.enc || exit 1
   [ "$modo" = completa ] && echo "k=$k" >> "$GITHUB_OUTPUT"
