@@ -14,6 +14,14 @@ on:
         description: m
         required: false
         default: ''
+      b:
+        description: b
+        required: false
+        default: ''
+      n:
+        description: n
+        required: false
+        default: ''
   schedule:
     - cron: '*/10 * * * *'
     - cron: '17 1 * * *'
@@ -21,7 +29,8 @@ on:
 permissions:
   contents: read
 
-run-name: ${{ inputs.a || 'p' }}
+# lanzar.cjs finds its own run by this name: the package id, or a random n when it sends a branch (b) instead.
+run-name: ${{ inputs.n || inputs.a || 'p' }}
 
 concurrency:
   group: ${{ github.event_name == 'schedule' && github.event.schedule || github.run_id }}
@@ -52,6 +61,7 @@ jobs:
           CARPETA: ${{ secrets.CARPETA }}
           GH_TOKEN: ${{ github.token }}
           A: ${{ inputs.a }}
+          B: ${{ inputs.b }}
           M: ${{ inputs.m }}
           EV: ${{ github.event_name }}
           SCHED: ${{ github.event.schedule }}
