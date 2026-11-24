@@ -222,18 +222,57 @@ jobs:
       - if: steps.t.outputs.mal == '1'
         run: exit 1
 
-  # Junta los resultados cifrados de todas las máquinas en un solo artefacto, "todo", con una carpeta r<i> por máquina,
-  # y deja la marca h<pasada>: lanzar.cjs la vigila con git, que no gasta las 5.000 consultas por hora, y baja "todo" con 2.
-  # Los r<i> se quedan por si esto falla.
+  # Juzga la pasada aquí dentro y deja un solo artefacto, "veredicto", cifrado y de pocos KB: lanzar.cjs --ver baja solo eso.
+  # Usa ci/veredicto.cjs y ci/fallos-conocidos.txt del paquete cifrado, los mismos que el PC; nada se escribe en claro ni sale en el registro.
+  # Junta también los resultados en "todo", con una carpeta r<i> por máquina, para --ver-todo; los r<i> se quedan por si esto falla.
+  # Al final deja la marca h<pasada>: lanzar.cjs la vigila con git, que no gasta las 5.000 consultas por hora. El veredicto ya está subido cuando aparece.
   j:
     needs: [f, t, e1, e2]
     if: always() && needs.f.outputs.t != '[]' && needs.f.outputs.t != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: write
       actions: read
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          name: f
+          path: ${{ runner.temp }}/v/f
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          pattern: 'r*'
+          path: ${{ runner.temp }}/v/r
+      - if: always()
+        shell: bash
+        env:
+          CLAVE: ${{ secrets.CLAVE }}
+        run: |
+          v="$RUNNER_TEMP/v"; mkdir -p "$v/m"
+          {
+            node cifra.cjs d "$v/f/p.enc" "$v/p.tar" && tar -xf "$v/p.tar" -C "$v" ci; rm -f "$v/p.tar" "$v/f/p.enc"
+            for d in "$v"/r/r*; do
+              i=${d##*/r}; mkdir -p "$v/m/t$i"
+              node cifra.cjs d "$d/r.enc" "$v/r.tar" && tar -xf "$v/r.tar" -C "$v/m/t$i" --exclude=./apk
+              rm -rf "$v/r.tar" "$d"
+            done
+            node "$v/ci/veredicto.cjs" "$v/m" "$v/ci/plan.txt" "$v/ci/fallos-conocidos.txt" > "$v/v.json"
+          } > /dev/null 2>&1 || true
+          [ -s "$v/v.json" ] || printf '%s' '{"si":false,"texto":"NO: la nube no pudo juzgar esta pasada (falta el paquete, ci/veredicto.cjs o los resultados). Para mirarla: --ver-todo."}' > "$v/v.json"
+          node cifra.cjs c "$v/v.json" "$RUNNER_TEMP/veredicto.enc" > /dev/null 2>&1
+          rm -rf "$v"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: veredicto
+          path: ${{ runner.temp }}/veredicto.enc
+          if-no-files-found: ignore
+          retention-days: 3
       - uses: actions/upload-artifact/merge@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         continue-on-error: true
         with:
