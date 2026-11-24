@@ -6,7 +6,7 @@
 //      el resumen base (base-pc.enc) y lo de cada máquina (<carpeta>/s/s<i>/s.enc), pasa puerta.py, la misma del PC,
 //      y deja <carpeta>/veredicto.enc cifrado con resultados.pub: solo el PC puede leerlo (node lanzar.cjs --veredicto).
 //      Deja además <carpeta>/veredicto-claro.txt sin cifrar (CI-D2), para leerlo sin llaves desde la nube: solo los nombres
-//      de las pruebas con fallo nuevo, una por línea, y al final SÍ o NO. Sin mensajes de error, rutas ni código: el repositorio
+//      de las pruebas con fallo nuevo y las tandas o pasos caídos, una por línea, y al final SÍ o NO. Sin mensajes de error, rutas ni código: el repositorio
 //      de las pasadas es público.
 // La llave privada de veredicto.pub no se guarda en ningún sitio: sale de la clave CLAVE, que ya es un secreto del repositorio.
 const fs = require('node:fs');
@@ -59,23 +59,26 @@ function maquina(o, salida) {
   fs.writeFileSync(salida, cifrarX(datos, crypto.createPublicKey(fs.readFileSync(path.join(__dirname, 'veredicto.pub'), 'utf8'))));
 }
 
-// De la salida de puerta.py solo pasan los nombres de las pruebas ("archivo > nombre" o "app/archivo:línea") y SÍ o NO.
-// Un nombre de prueba nunca lleva saltos de línea ni caracteres de control; se corta a 160 como hace puerta.py.
+// De la salida de puerta.py solo pasan, con su tanda delante, los nombres de las pruebas con fallo nuevo y los motivos
+// de plantilla fija de puerta.py (grupo que falta, sin resumen, paso que falla), y al final SÍ o NO. Nada de mensajes de error.
+// Tandas y pasos son nombres del plan: solo letras, cifras, espacios, puntos y guiones. Un nombre de prueba se corta a 160.
 function claro(salida) {
   const lineas = String(salida || '').replace(/\r/g, '').trim().split('\n');
   const si = lineas[lineas.length - 1] === 'SÍ';
-  const nombres = new Set();
+  const fuera = new Set();
   for (const l of lineas) {
-    const m = /^[^:]*: fallo nuevo: (.+)$/.exec(l);
-    if (m) nombres.add(m[1].replace(/[\x00-\x1f\x7f]/g, '').slice(0, 160));
+    let m = /^([\w .-]{1,60}): fallo nuevo: (.+)$/.exec(l);
+    if (m) { fuera.add(`${m[1]}: ${m[2].replace(/[\x00-\x1f\x7f]/g, '').slice(0, 160)}`); continue; }
+    m = /^([\w .-]{1,60}): (grupo que falta en la nueva|sin resumen\.json|paso [\w.-]{1,40} falla y no en la base)$/.exec(l);
+    if (m) fuera.add(l);
   }
-  return [...(si ? [] : nombres), si ? 'SÍ' : 'NO'].join('\n') + '\n';
+  return [...(si ? [] : fuera), si ? 'SÍ' : 'NO'].join('\n') + '\n';
 }
 
 function juntar(w) {
   const run = process.env.GITHUB_RUN_ID;
   const clave = Buffer.from(String(process.env.CLAVE || '').trim(), 'hex');
-  let texto, enClaro = 'NO\n';
+  let texto, enClaro = 'no se pudo calcular el veredicto en la nube\nNO\n';
   try {
     if (clave.length !== 32 || !/^\d+$/.test(run || '')) throw Error('falta la clave o el número de pasada');
     const tar = (...a) => execFileSync('tar', a, { cwd: w, stdio: 'ignore' });
