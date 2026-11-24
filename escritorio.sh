@@ -46,8 +46,14 @@ for (const p of pasos.filter(p => p.code !== '0')) {
   const lineas = leer(path.join(o, `${p.n}.log`));
   fallos.push({ t: `escritorio > ${p.n}: ${(ultimo(lineas) || `salió con ${p.code}`).slice(0, 200)}`, m: lineas.slice(-40).join('\n').slice(0, 2000) });
   // Qué buscaba la prueba y en qué línea, aparte: cada fallo se corta a 160 letras.
-  const donde = [...lineas].reverse();
-  for (const l of [donde.find(l => /^Locator:/.test(l)), donde.find(l => /^at .*\.(e2e|electron)\.mjs:\d+/.test(l))]) {
+  // De la última pila: las tres líneas de antes, con el mensaje, y su primera línea de la prueba.
+  const fin = lineas.findLastIndex(l => /^at /.test(l));
+  let ini = fin;
+  while (ini > 0 && /^at /.test(lineas[ini - 1])) ini--;
+  const pila = fin < 0 ? [] : lineas.slice(ini, fin + 1);
+  const extra = fin < 0 ? [] : lineas.slice(Math.max(0, ini - 3), ini);
+  extra.push([...lineas].reverse().find(l => /^Locator:/.test(l)), pila.find(l => /\.(e2e|electron)\.mjs:\d+/.test(l)));
+  for (const l of new Set(extra)) {
     if (l) fallos.push({ t: `escritorio > ${p.n}: ${l.slice(0, 200)}`, m: '' });
   }
   // Los registros de la ventana y del servidor que arranca la prueba, en <carpeta del paso>/*.log.
