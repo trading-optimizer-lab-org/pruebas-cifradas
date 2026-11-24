@@ -236,6 +236,8 @@ jobs:
   # Usa ci/veredicto.cjs y ci/fallos-conocidos.txt del paquete cifrado, los mismos que el PC; nada se escribe en claro ni sale en el registro.
   # Junta también los resultados en "todo", con una carpeta r<i> por máquina, para --ver-todo; los r<i> se quedan por si esto falla.
   # Al final deja la marca h<pasada>: lanzar.cjs la vigila con git, que no gasta las 5.000 consultas por hora. El veredicto ya está subido cuando aparece.
+  # Desde CI-D1 deja también "veredicto-claro", sin cifrar, para leer sin clave: solo SÍ o NO y los nombres de lo que falla, sin mensajes, rutas ni código.
+  # Lo escribe veredicto.cjs --resumen; aquí solo pasan las líneas con caracteres sencillos. Una rama con un veredicto.cjs anterior deja solo la última línea.
   j:
     needs: [f, t, e1, e2]
     if: always() && needs.f.outputs.t != '[]' && needs.f.outputs.t != ''
@@ -271,16 +273,36 @@ jobs:
               node cifra.cjs d "$d/r.enc" "$v/r.tar" && tar -xf "$v/r.tar" -C "$v/m/t$i" --exclude=./apk
               rm -rf "$v/r.tar" "$d"
             done
-            node "$v/ci/veredicto.cjs" "$v/m" "$v/ci/plan.txt" "$v/ci/fallos-conocidos.txt" > "$v/v.txt"
+            node "$v/ci/veredicto.cjs" "$v/m" "$v/ci/plan.txt" "$v/ci/fallos-conocidos.txt" --resumen "$v/claro.txt" > "$v/v.txt"
           } > /dev/null 2>&1 || true
           [ -s "$v/v.txt" ] || printf 'Pasada %s.\nNO (la nube no pudo juzgar esta pasada: falta el paquete, ci/veredicto.cjs o los resultados. Para mirarla: --ver-todo)\n' "$GITHUB_RUN_ID" > "$v/v.txt"
           node cifra.cjs c "$v/v.txt" "$RUNNER_TEMP/veredicto.enc" > /dev/null 2>&1
+          {
+            export LC_ALL=C.UTF-8
+            c="$RUNNER_TEMP/claro"; mkdir -p "$c"
+            final='^(SÍ|NO \([0-9]+ motivos\))$'
+            if [ -s "$v/claro.txt" ] && tail -n 1 "$v/claro.txt" | grep -Eq "$final"; then
+              head -n 102 "$v/claro.txt" | grep -E '^(FALLA [][[:alnum:] ._:/$#(),<>+=*?-]{1,200}|y [0-9]+ más)$' > "$c/resumen.txt"
+              tail -n 1 "$v/claro.txt" >> "$c/resumen.txt"
+            elif tail -n 1 "$v/v.txt" | grep -Eq "$final"; then
+              { echo '(sin nombres: la rama probada tiene un veredicto.cjs anterior a CI-D1)'; tail -n 1 "$v/v.txt"; } > "$c/resumen.txt"
+            else
+              echo 'NO (la nube no pudo juzgar esta pasada)' > "$c/resumen.txt"
+            fi
+          } > /dev/null 2>&1 || true
           rm -rf "$v"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: veredicto
           path: ${{ runner.temp }}/veredicto.enc
+          if-no-files-found: ignore
+          retention-days: 3
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: veredicto-claro
+          path: ${{ runner.temp }}/claro/resumen.txt
           if-no-files-found: ignore
           retention-days: 3
       - uses: actions/upload-artifact/merge@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
