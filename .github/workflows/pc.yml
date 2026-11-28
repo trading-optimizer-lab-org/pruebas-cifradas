@@ -126,7 +126,11 @@ jobs:
           read -r tipo _ _ so < <(sed -n "$((I + 1))p" "$w/ci/plan.txt")
           echo "tipo=$tipo" >> "$GITHUB_OUTPUT"
           primera=$(awk -v t="$tipo" -v s="$so" '$1 == t && $4 == s {print NR - 1; exit}' "$w/ci/plan.txt")
-          case $tipo in server|app) [ "$primera" = "$I" ] && echo g=1 >> "$GITHUB_OUTPUT" ;; esac
+          case $tipo in server|app|tauri) [ "$primera" = "$I" ] && echo g=1 >> "$GITHUB_OUTPUT" ;; esac
+          if [ "$tipo" = tauri ]; then
+            hr=$(tar -xzOf "$w/src.tgz" pc/tauri-shell/src-tauri/Cargo.lock 2>/dev/null | sha256sum | cut -c1-16)
+            echo "kr=cargo-$p-$RUNNER_OS-$hr" >> "$GITHUB_OUTPUT"
+          fi
           exit 0
       - id: c
         if: steps.d.outputs.k != ''
@@ -140,6 +144,22 @@ jobs:
           restore-keys: |
             npm-${{ steps.d.outputs.p }}-${{ runner.os }}-
             npm-main-${{ runner.os }}-
+      - id: cr
+        if: steps.d.outputs.kr != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ runner.temp }}/cargo-home/registry/index
+            ${{ runner.temp }}/cargo-home/registry/cache
+            ${{ runner.temp }}/cargo-home/git/db
+            ${{ runner.temp }}/cargo-target/debug/deps
+            ${{ runner.temp }}/cargo-target/debug/build
+            ${{ runner.temp }}/cargo-target/release/deps
+            ${{ runner.temp }}/cargo-target/release/build
+          key: ${{ steps.d.outputs.kr }}
+          restore-keys: |
+            cargo-${{ steps.d.outputs.p }}-${{ runner.os }}-
+            cargo-main-${{ runner.os }}-
       # Este paso ejecuta el código que se prueba y no recibe la clave en su entorno, pero el proceso de GitHub que la pasó a
       # "abrir el paquete" sigue vivo. En Linux se quitan sudo y docker antes y se exige ptrace_scope 2, para que el código probado no
       # pueda leer la memoria de ese proceso. En Windows la máquina es administradora: por eso las ramas de la fábrica solo van a Linux.
@@ -151,6 +171,8 @@ jobs:
           I: ${{ matrix.x.i }}
           TIPO: ${{ steps.d.outputs.tipo }}
           npm_config_cache: ${{ runner.temp }}/npmc
+          CARGO_HOME: ${{ runner.temp }}/cargo-home
+          DUENDI_CARGO_TARGET: ${{ runner.temp }}/cargo-target
         run: |
           T=$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
           o="$T/o"; w="$T/w"; mkdir -p "$o"
@@ -207,6 +229,18 @@ jobs:
             ${{ runner.temp }}/npmc
             !${{ runner.temp }}/npmc/_logs
           key: ${{ steps.d.outputs.k }}
+      - if: steps.d.outputs.kr != '' && steps.cr.outputs.cache-hit != 'true' && steps.t.outputs.mal != '1'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ${{ runner.temp }}/cargo-home/registry/index
+            ${{ runner.temp }}/cargo-home/registry/cache
+            ${{ runner.temp }}/cargo-home/git/db
+            ${{ runner.temp }}/cargo-target/debug/deps
+            ${{ runner.temp }}/cargo-target/debug/build
+            ${{ runner.temp }}/cargo-target/release/deps
+            ${{ runner.temp }}/cargo-target/release/build
+          key: ${{ steps.d.outputs.kr }}
       - if: steps.t.outputs.mal == '1'
         run: exit 1
 
